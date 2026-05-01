@@ -3,7 +3,7 @@ if getgenv().SimpleSpyExecuted and type(getgenv().SimpleSpyShutdown) == "functio
 end
 
 local realconfigs = {
-    logcheckcaller = false,
+    logcheckcaller = true,
     autoblock = false,
     funcEnabled = true,
     advancedinfo = false,
@@ -65,7 +65,7 @@ local newcclosure = newcclosure or blankfunction
 local clonefunction = clonefunction or blankfunction
 local cloneref = cloneref or blankfunction
 local request = request or syn and syn.request
-local makewritable = makewriteable or function(tbl)
+local makewriteable = makewriteable or function(tbl)
     setreadonly(tbl,false)
 end
 local makereadonly = makereadonly or function(tbl)
@@ -194,30 +194,9 @@ local function jsond(str)
 end
 
 function ErrorPrompt(Message,state)
-    if getrenv then
-        local ErrorPrompt = getrenv().require(CoreGui:WaitForChild("RobloxGui"):WaitForChild("Modules"):WaitForChild("ErrorPrompt")) -- File can be located in your roblox folder (C:\Users\%Username%\AppData\Local\Roblox\Versions\whateverversionitis\ExtraContent\scripts\CoreScripts\Modules)
-        local prompt = ErrorPrompt.new("Default",{HideErrorCode = true})
-        local ErrorStoarge = Create("ScreenGui",{Parent = CoreGui,ResetOnSpawn = false})
-        local thread = state and running()
-        prompt:setParent(ErrorStoarge)
-        prompt:setErrorTitle("Simple Spy V3 Error")
-        prompt:updateButtons({{
-            Text = "Proceed",
-            Callback = function()
-                prompt:_close()
-                ErrorStoarge:Destroy()
-                if thread then
-                    resume(thread)
-                end
-            end,
-            Primary = true
-        }}, 'Default')
-        prompt:_open(Message)
-        if thread then
-            yield(thread)
-        end
-    else
-        warn(Message)
+    warn("Simple Spy V3 Error:\n" .. tostring(Message))
+    if messagebox then
+        pcall(messagebox, tostring(Message), "Simple Spy V3 Error", 0)
     end
 end
 
@@ -1729,8 +1708,8 @@ local newindex = function(method,originalfunction,...)
                 args = nil
 
                 if configs.funcEnabled then
-                    data.infofunc = info(2,"f")
-                    local calling = getcallingscript()
+                    data.infofunc = oth and oth.is_hook_thread and oth.is_hook_thread() and info(oth.get_original_thread(), 1, "f") or info(2,"f")
+                    local calling = oth and oth.is_hook_thread and oth.is_hook_thread() and getscriptfromthread(oth.get_original_thread()) or getcallingscript()
                     data.callingscript = calling and cloneref(calling) or nil
                 end
 
@@ -1789,8 +1768,8 @@ local newnamecall = newcclosure(function(...)
                     args = nil
 
                     if configs.funcEnabled then
-                        data.infofunc = info(2,"f")
-                        local calling = getcallingscript()
+                        data.infofunc = oth and oth.is_hook_thread and oth.is_hook_thread() and info(oth.get_original_thread(), 1, "f") or info(2,"f")
+                        local calling = oth and oth.is_hook_thread and oth.is_hook_thread() and getscriptfromthread(oth.get_original_thread()) or getcallingscript()
                         if type(calling) == "userdata" then
                             data.callingscript = calling and cloneref(calling) or nil
                         end
@@ -1838,10 +1817,10 @@ end)
 
 local function disablehooks()
     if hook and unhook then
-        if originalnamecall then pcall(unhook, getrawmetatable(game).__namecall,originalnamecall) end
-        if originalEvent then pcall(unhook, Instance.new("RemoteEvent").FireServer, originalEvent) end
-        if originalFunction then pcall(unhook, Instance.new("RemoteFunction").InvokeServer, originalFunction) end
-        if originalUnreliableEvent then pcall(unhook, Instance.new("UnreliableRemoteEvent").FireServer, originalUnreliableEvent) end
+        pcall(unhook, getrawmetatable(game).__namecall)
+        pcall(unhook, Instance.new("RemoteEvent").FireServer)
+        pcall(unhook, Instance.new("RemoteFunction").InvokeServer)
+        pcall(unhook, Instance.new("UnreliableRemoteEvent").FireServer)
         if restorefunction then
             if originalnamecall then pcall(restorefunction, originalnamecall) end
             if originalEvent then pcall(restorefunction, originalEvent) end
@@ -1866,10 +1845,21 @@ function toggleSpy()
     if not toggle then
         local oldnamecall
         if hook and unhook then
-            oldnamecall = hook(getrawmetatable(game).__namecall, function(...) return newnamecall(...) end)
-            originalEvent = hook(Instance.new("RemoteEvent").FireServer, function(...) return newFireServer(...) end)
-            originalFunction = hook(Instance.new("RemoteFunction").InvokeServer, function(...) return newInvokeServer(...) end)
-            originalUnreliableEvent = hook(Instance.new("UnreliableRemoteEvent").FireServer, function(...) return newUnreliableFireServer(...) end)
+            hook(getrawmetatable(game).__namecall, function(...) return newnamecall(...) end)
+            hook(Instance.new("RemoteEvent").FireServer, function(...) return newFireServer(...) end)
+            hook(Instance.new("RemoteFunction").InvokeServer, function(...) return newInvokeServer(...) end)
+            hook(Instance.new("UnreliableRemoteEvent").FireServer, function(...) return newUnreliableFireServer(...) end)
+            
+            local function oth_wrapper(...) return oth.get_root_callback()(...) end
+            originalEvent = oth_wrapper
+            originalFunction = oth_wrapper
+            originalUnreliableEvent = oth_wrapper
+            
+            originalnamecall = function(...)
+                if oth and oth.is_hook_thread and oth.is_hook_thread() then
+                    return oth.get_root_callback()(...)
+                end
+            end
         else
             if hookmetamethod then
                 oldnamecall = hookmetamethod(game, "__namecall", clonefunction(newnamecall))
@@ -1879,9 +1869,10 @@ function toggleSpy()
             originalEvent = hookfunction(Instance.new("RemoteEvent").FireServer, clonefunction(newFireServer))
             originalFunction = hookfunction(Instance.new("RemoteFunction").InvokeServer, clonefunction(newInvokeServer))
             originalUnreliableEvent = hookfunction(Instance.new("UnreliableRemoteEvent").FireServer, clonefunction(newUnreliableFireServer))
-        end
-        originalnamecall = originalnamecall or function(...)
-            return oldnamecall(...)
+            
+            originalnamecall = originalnamecall or function(...)
+                return oldnamecall(...)
+            end
         end
     else
         disablehooks()
